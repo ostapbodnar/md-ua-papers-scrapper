@@ -1,0 +1,23 @@
+version: '3'
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"    # Default RabbitMQ port
+      - "15672:15672"  # Management plugin port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq  # Data volume for RabbitMQ
+
+  redis:
+    image: "redis:latest"
+    container_name: "redis"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data  # Data volume for Redis
+
+volumes:
+  rabbitmq_data:
+    driver: local
+  redis_data:
+    driver: local
