@@ -1,4 +1,7 @@
 import asyncio
+import csv
+import datetime
+import io
 import itertools
 import json
 import logging
@@ -11,10 +14,11 @@ import aiohttp
 import redis.asyncio as redis
 from aio_pika import IncomingMessage
 from aiohttp import ClientResponse
-from fp.fp import FreeProxy
 
 from src import config
 from src.webpage_pdf_finders.fake_proxy import FakeProxy
+
+csv_lock = asyncio.Lock()
 
 # proxy_manager = FreeProxy(https=True)
 proxy_manager = FakeProxy(https=True)
@@ -107,36 +111,58 @@ async def find_and_load_by_url(url: str, destination: str, timeout: int = 60):
 
     start_time = time.time()
 
+    files = []
+
     async with aiohttp.ClientSession(headers=headers) as session:
         pdf_links = await asyncio.wait_for(find_pdfs(url, session), timeout)
         logger.info("Amount of found PDFs for %s: %s", url, len(pdf_links))
         for link in pdf_links:
+            path = None
             try:
                 async with session.get(link, proxy=proxy_manager.get()) as response:
                     response.raise_for_status()
                     filename = parse_filename(response)
                     if not filename.endswith(".pdf"):
                         filename += ".pdf"
-                    async with aiofiles.open(destination + "/" + filename, mode="wb") as file:
+                    path = destination + "/" + filename
+                    async with aiofiles.open(path, mode="wb") as file:
                         data = await response.content.read()
                         await file.write(data)
                         logger.debug("PDF %s saved to %s", filename, destination)
             except Exception as exc:
                 logger.error("Failed, error: " + str(exc))
-                continue
+            finally:
+                files.append(path)
     logger.debug("Paper retrival took %s second(s)", time.time() - start_time)
-    return pdf_links
+    return pdf_links, files
+
+
+async def write_to_csv(data):
+    async with csv_lock:
+        async with aiofiles.open(config.PDF_TARGET_LOCATION + '/loaded_pdfs.csv', mode='a', newline='') as file:
+            output = io.StringIO()
+            writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+            writer.writerow(data)
+            await file.write(output.getvalue())
 
 
 async def message_callback(message: IncomingMessage):
     async with message.process():
         data = json.loads(message.body.decode())
         logger.info("Incoming message for: %s", data['title'])
+        success = True
+        links = files = None
         try:
-            await find_and_load_by_url(data['url'], config.PDF_TARGET_LOCATION, 180)
+            links, files = await find_and_load_by_url(data['url'], config.PDF_TARGET_LOCATION, 180)
         except TimeoutError as exc:
+            success = False
             logger.error("Timeout error for: %s", data['title'])
             raise exc
+        finally:
+            logger.info("Saving record info")
+            await write_to_csv(
+                [data['title'], data['url'], data['metadata'], datetime.datetime.now(), success, links, files]
+            )
 
 
 if __name__ == "__main__":

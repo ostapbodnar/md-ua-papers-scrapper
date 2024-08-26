@@ -1,12 +1,14 @@
-version: '3'
 services:
   rabbitmq:
     image: rabbitmq:3-management
     ports:
-      - "5672:5672"    # Default RabbitMQ port
-      - "15672:15672"  # Management plugin port
+      - "5672:5672"
+      - "15672:15672"
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq  # Data volume for RabbitMQ
+      - rabbitmq_data:/var/lib/rabbitmq
+    profiles:
+      - dev
+      - prod
 
   redis:
     image: "redis:latest"
@@ -14,7 +16,39 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data  # Data volume for Redis
+      - redis_data:/data
+    profiles:
+      - dev
+      - prod
+
+  scopus_paper_searcher:
+    build:
+      context: .
+      target: scopus_paper_searcher
+    depends_on:
+      - rabbitmq
+      - redis
+    environment:
+      - RABBIT_MQ_HOST=rabbitmq
+      - REDIS_URL=redis://redis/0
+      - ELSAVIER_API_KEY=${ELSAVIER_API_KEY}
+    profiles:
+      - prod
+
+  webpage_pdf_finders:
+    build:
+      context: .
+      target: paper_scrapper
+    depends_on:
+      - rabbitmq
+      - redis
+    volumes:
+      - ./pdfs:/app/pdfs
+    environment:
+      - RABBIT_MQ_HOST=rabbitmq
+      - REDIS_URL=redis://redis/0
+    profiles:
+      - prod
 
 volumes:
   rabbitmq_data:
