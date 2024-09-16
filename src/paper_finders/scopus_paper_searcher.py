@@ -86,6 +86,6 @@ def trigger_paper_processing(channel: BlockingChannel, doi: str, title: str, met
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    for start, end in generate_year_pairs(2000, 2025):
+    for start, end in generate_year_pairs(2000, 2025)[::-1]:
         query = f"AND PUBYEAR > {start - 1} AND PUBYEAR < {end + 1}"
         load_papers_identifiers(UA_PAPERS_SEARCH_QUERY_PATTERN.format(year=query))
